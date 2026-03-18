@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import axios from "axios";
 import "./index.css";
 import { API_URL } from "../config/constants";
 import dayjs from "dayjs";
-import { Button, message, Spin, Modal, Form} from "antd";
+import { Button, message, Spin, Modal, Form, Input, Checkbox, Rate } from "antd";
 import ProductCard from "../components/productCard";
 
 function ProductPage({ userNickname }) {
@@ -12,29 +12,51 @@ function ProductPage({ userNickname }) {
   const navigate = useNavigate();
   const [product, setProduct] = useState(null);
   const [products, setProducts] = useState([]);
+  const [reviews, setReviews] = useState([]);
   const [isPurchaseModalVisible, setIsPurchaseModalVisible] = useState(false);
   const [isCompleteModalVisible, setIsCompleteModalVisible] = useState(false);
   const [form] = Form.useForm();
 
-  const getProduct = useCallback(() => {
-    axios.get(`${API_URL}/products/${id}`)
+  const getProduct = () => {
+    axios
+      .get(`${API_URL}/products/${id}`)
       .then((result) => {
         setProduct(result.data.product);
       })
       .catch((error) => {
         console.error(error);
       });
-  }, [id]);
+  };
 
-  const getRecommendations = useCallback(() => {
-    axios.get(`${API_URL}/products/${id}/recommendation`)
+  const getRecommendations = () => {
+    axios
+      .get(`${API_URL}/products/${id}/recommendation`)
       .then((result) => {
         setProducts(result.data.products);
       })
       .catch((error) => {
         console.error(error);
       });
-  }, [id]);
+  };
+
+  const getReviews = () => {
+    axios
+      .get(`${API_URL}/products/${id}/reviews`)
+      .then((result) => {
+        const serverReviews = result.data.reviews;
+        const userData = JSON.parse(localStorage.getItem(userNickname)) || {};
+        const userReviews = userData.reviews || [];
+        const productUserReviews = userReviews.filter(review => review.productId === id);
+        const allReviews = [...serverReviews, ...productUserReviews];
+        const uniqueReviews = allReviews.filter((review, index, self) =>
+          index === self.findIndex((t) => t.id === review.id)
+        );
+        setReviews(uniqueReviews);
+      })
+      .catch((error) => {
+        console.error(error);
+      });
+  };
 
   const showPurchaseModal = () => {
     if (!userNickname) {
@@ -68,7 +90,6 @@ function ProductPage({ userNickname }) {
     }
   };
 
-  // Ensure this function is used in the form's onFinish prop
   const handlePurchase = async (values) => {
     try {
       await axios.post(`${API_URL}/purchase/${id}`, {
@@ -109,7 +130,8 @@ function ProductPage({ userNickname }) {
   useEffect(() => {
     getProduct();
     getRecommendations();
-  }, [getProduct, getRecommendations]);
+    getReviews();
+  }, [id, userNickname]);
 
   if (product === null) {
     return (
@@ -158,14 +180,26 @@ function ProductPage({ userNickname }) {
         <div id="description-box">
           <pre id="description">{product.description}</pre>
         </div>
-
-        <h1>추천 상품</h1>
-        <div style={{ display: "flex", flexWrap: "wrap" }}>
-          {products.map((product, index) => (
-            <ProductCard key={index} product={product} />
-          ))}
+        <div id="reviews-box">
+          <h2>상품 후기</h2>
+          <div id="reviews-list">
+            {reviews.map((review, index) => (
+              <div key={index} className="review-item">
+                <Rate disabled defaultValue={review.rating} />
+                <p>{review.comment}</p>
+                <p>{dayjs(review.createdAt).format("YYYY년 MM월 DD일")}</p>
+              </div>
+            ))}
+          </div>
         </div>
-        
+        <div>
+          <h1>추천 상품</h1>
+          <div style={{ display: "flex", flexWrap: "wrap" }}>
+            {products.map((product, index) => (
+              <ProductCard key={index} product={product} />
+            ))}
+          </div>
+        </div>
       </div>
 
       <Modal
@@ -174,23 +208,72 @@ function ProductPage({ userNickname }) {
         onCancel={() => setIsPurchaseModalVisible(false)}
         footer={null}
       >
-       {/* Ensure handlePurchase is connected here */}
-       <Form form={form} layout="vertical" onFinish={handlePurchase}>
-         {/* Form fields go here */}
-         ...
-       </Form>
-     </Modal>
+        <Form form={form} layout="vertical" onFinish={handlePurchase}>
+          <Form.Item
+            name="name"
+            label="이름"
+            rules={[{ required: true, message: "이름을 입력해주세요" }]}
+          >
+            <Input />
+          </Form.Item>
+          <Form.Item
+            name="phone"
+            label="전화번호"
+            rules={[{ required: true, message: "전화번호를 입력해주세요" }]}
+          >
+            <Input />
+          </Form.Item>
+          <Form.Item
+            name="address"
+            label="배송지"
+            rules={[{ required: true, message: "배송지를 입력해주세요" }]}
+          >
+            <Input.TextArea />
+          </Form.Item>
+          <Form.Item
+            name="bankAccount"
+            label={
+              <div>
+                무통장입금 계좌번호
+                <div style={{ fontSize: "14px", color: "#666" }}>
+                  농협 352-1603-5711-23
+                </div>
+              </div>
+            }
+            rules={[{ required: true, message: "입금자명을 입력해주세요" }]}
+          >
+            <Input placeholder="입금자명을 입력해주세요" />
+          </Form.Item>
+          <Form.Item
+            name="agreement"
+            valuePropName="checked"
+            rules={[
+              {
+                validator: (_, value) =>
+                  value ? Promise.resolve() : Promise.reject(new Error("구매 동의가 필요합니다")),
+              },
+            ]}
+          >
+            <Checkbox>구매 정보 제공에 동의합니다</Checkbox>
+          </Form.Item>
+          <Form.Item>
+            <Button type="primary" htmlType="submit" block>
+              구매하기
+            </Button>
+          </Form.Item>
+        </Form>
+      </Modal>
 
-     <Modal
-       title="구매 완료"
-       visible={isCompleteModalVisible}
-       onCancel={() => setIsCompleteModalVisible(false)}
-       footer={[
-         <Button key="home" type="primary" onClick={handleComplete}>
-           홈으로 가기
-         </Button>,
-       ]}
-     >
+      <Modal
+        title="구매 완료"
+        visible={isCompleteModalVisible}
+        onCancel={() => setIsCompleteModalVisible(false)}
+        footer={[
+          <Button key="home" type="primary" onClick={handleComplete}>
+            홈으로 가기
+          </Button>,
+        ]}
+      >
         <p>구매가 완료되었습니다.</p>
         <p>입금 확인 후 배송이 시작됩니다.</p>
       </Modal>
